@@ -1,9 +1,9 @@
 #/bin/bash
+TTY=$(tty)
 UNISON=/usr/bin/unison
-INOTIFY=/usr/bin/inotifywait
+INOTIFYWAIT=/usr/bin/inotifywait
 
 # conf
-TTY=$(tty)
 PRF=sync.prf
 SRC_DIR=/home/hobin/dev
 LOG_DIR=/home/hobin/unison
@@ -31,7 +31,7 @@ is_ignore()
 }
 
 # inotifywait
-$INOTIFY -mrq -e create,delete,modify,move $SRC_DIR | while read event; do
+$INOTIFYWAIT -mrq -e create,delete,modify,move $SRC_DIR | while read event; do
     path=$(echo $event | awk '{print $1}')
     path=${path/$SRC_DIR\//}
     file=$(echo $event | awk '{print $3}')
