@@ -1,38 +1,53 @@
 #/bin/bash
-
 UNISON=/usr/bin/unison
 INOTIFY=/usr/bin/inotifywait
 
+# conf
+TTY=$(tty)
 PRF=sync.prf
 SRC_DIR=/home/hobin/dev
 LOG_DIR=/home/hobin/unison
-IGNORE="^25/* ^26/* ^run/* ^build.mk/* .unison*"
+IGNORES="^25/* ^26/* ^run/* ^build.mk/* .unison*"
 
 # init
-logfile=$LOG_DIR/inotify_$(date +%Y%m%d).log
-echo -e "began: $(date)\ninotify: init" >> $logfile
-$UNISON $PRF >> $logfile 2>&1
-echo -e "ended: $(date)\n" >> $logfile
+echo -e "Began: $(date)\nInotify: init"
+$UNISON $PRF
+echo -e "Ended: $(date)\n"
+
+# is running
+if [[ $(ps -ef | grep -v grep | grep -c inotifywait) -gt 0 ]]; then 
+    echo inotifywait is running
+    exit 0
+fi
+
+is_ignore()
+{
+    for reg in $1; do
+        if [[ $(echo "$2" | grep -E "$reg" -c) -gt 0 ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
 
 # inotifywait
-if [ $(ps -ef | grep -v grep | grep -c inotifywait) -lt 1 ]; then
-  $INOTIFY -mrq -e create,delete,modify,move $SRC_DIR | while read event; do
+$INOTIFY -mrq -e create,delete,modify,move $SRC_DIR | while read event; do
     path=$(echo $event | awk '{print $1}')
     path=${path/$SRC_DIR\//}
     file=$(echo $event | awk '{print $3}')
-	if [ -a "$SRC_DIR/$path$file" ]; then
-	  ignore=0
-	  for reg in $IGNORE; do
-	    if [ $(echo "$path$file" | grep -E "$reg" -c) -gt 0 ]; then
-			ignore=1
-			break
-		fi
-      done
-	  if [ $ignore -eq 1 ]; then continue; fi
-      logfile=$LOG_DIR/inotify_$(date +%Y%m%d).log
-      echo -e "began: $(date)\ninotify: $event" >> $logfile
-	  $UNISON $PRF -path "$path$file" >> $logfile 2>&1
-	  echo -e "ended: $(date)\n" >> $logfile
-	fi
-  done
-fi
+    if [[ ! -a "$SRC_DIR/$path$file" ]]; then
+        size=($(stty size -F $TTY))
+        printf "%-${size[1]}s\r" "Not exists file: $SRC_DIR/$path$file"
+        continue
+    fi
+    
+    if is_ignore "$IGNORES" "$path$file"; then
+        size=($(stty size -F $TTY))
+        printf "%-${size[1]}s\r" "Ignore file: $SRC_DIR/$path$file"
+        continue
+    fi
+    
+    echo -e "Began: $(date)\nInotify: $event"
+    $UNISON $PRF -path "$path$file"
+    echo -e "Ended: $(date)\n"
+done
