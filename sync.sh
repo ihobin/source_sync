@@ -6,7 +6,6 @@ INOTIFYWAIT=/usr/bin/inotifywait
 # conf
 PRF=sync.prf
 SRC_DIR=/home/hobin/dev
-LOG_DIR=/home/hobin/unison
 IGNORES="^25/* ^26/* ^run/* ^build.mk/* .unison*"
 
 # init
