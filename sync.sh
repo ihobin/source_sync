@@ -11,7 +11,7 @@ IGNORES="^25/* ^26/* ^run/* ^build.mk/* .unison*"
 
 # init
 echo -e "Began: $(date)\nInotify: init"
-#$UNISON $PRF
+$UNISON $PRF
 echo -e "Ended: $(date)\n"
 
 # is running
@@ -23,7 +23,7 @@ fi
 is_ignore()
 {
     for reg in $1; do
-        if [[ $(echo "$2" | grep -E "$reg" -c) -gt 0 ]]; then
+        if [[ $(echo "$2" | grep -c -E "$reg") -gt 0 ]]; then
             return 0
         fi
     done
