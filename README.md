@@ -1,1 +1,1 @@
-UNison and Inotify Files SYNChronization
+UNison and Inotify files SYNChronization
