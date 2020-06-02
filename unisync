@@ -10,17 +10,22 @@ IGNORES="^25/*|^26/*|^run/*|^build.mk/*|.unison*"
 LOG_FILE=~/unison/unisync.log
 PID_FILE=~/unison/unisync.pid
 
+
+NAME=$(basename $0)
+DESCRIPTION="Unison Inotify Synchronization"
+
 # usage
 USAGE="\
-Usage: $(basename $0) [options] ...\n\
+Usage: $NAME [options] ...\n\
 Options:\n\
   -l, --logfile FILE        Set the log file.\n\
   -d, --daemon              Run in daemon mode.\n\
+  -p, --pidfile FILE        Set the pid file.\n\
   -h, --help                Print this message and exit.\
 "
 
 # options
-OPTS=$(getopt -a -o l:dh -l logfile:,daemon,help -- "$@" 2>/dev/null)
+OPTS=$(getopt -a -o l:p:dh -l logfile:,logfile:,daemon,help -- "$@" 2>/dev/null)
 [[ $? -ne 0 ]] && echo -e "$USAGE" && exit 0
 eval set -- "${OPTS}"
 while true; do
@@ -86,6 +91,12 @@ unisync_impl()
 
 start_impl()
 {
+    # check running
+    status_impl
+    if [[ $? -eq 2 ]]; then
+        return 2
+    fi
+    # start
     unisync_impl >> $LOG_FILE 2>&1 &
     # pid
     echo $! > $PID_FILE
@@ -94,18 +105,18 @@ start_impl()
 
 stop_impl()
 {
-    if [[ ! -e "$PID_FILE" ]]; then
-        return 1
-    fi
-    pkill -P $(get_pid)
+    pkill -P "$(get_pid)" >/dev/null 2>&1
     return $?
 }
 
 status_impl()
 {
-    PID=$(get_pid)
-    ps -p "$PID" >/dev/null 2>&1
-    return $?
+    ps -p "$(get_pid)" >/dev/null 2>&1
+    if [[ $? -eq 0 ]]; then
+        return 2
+    else
+        return 3
+    fi
 }
 
 get_pid()
@@ -113,31 +124,54 @@ get_pid()
     cat $PID_FILE 2>/dev/null
 }
 
+get_status()
+{
+    case "$1" in
+        0)
+            echo "OK"
+            ;;
+        1)
+            echo "failed"
+            ;;
+        2)
+            echo "running"
+            ;;
+        3)
+            echo "not running"
+            ;;
+        *)
+            echo "<unknown>"
+            ;;
+    esac
+}
+
 if [[ $DAEMON -eq 1 ]]; then
     case "$1" in
         start)
-            if status_impl -eq 0; then
-                echo "status: 0, pid: $(get_pid)"
-            else
-                start_impl
-                echo "start: $?, pid: $(get_pid), pidfile: $PID_FILE, logfile: $LOG_FILE"
-            fi
+            printf "Starting $DESCRIPTION server $NAME .. \r"
+            sleep 1
+            start_impl
+            echo "Starting $DESCRIPTION server $NAME: $(get_status $?)"
             ;;
         stop)
+            printf "Stopping $DESCRIPTION server $NAME .. \r"
+            sleep 1
             stop_impl
-            echo "stop: $?, pid: $(get_pid)"
+            echo "Stopping $DESCRIPTION server $NAME: $(get_status $?)"
             ;;
         restart)
+            printf "Restarting $DESCRIPTION server $NAME ...\r"
             stop_impl
+            sleep 1
             start_impl
-            echo "restart: $?, pid: $(get_pid)"
+            echo "Restarting $DESCRIPTION server $NAME: $(get_status $?)"
             ;;
         status)
             status_impl
-            echo "status: $?, pid: $(get_pid)"
+            echo "$NAME is $(get_status $?)"
             ;;
-        ?)
-            echo "$(basename $0) -d start|stop|restart|status"
+        *)
+            echo "Usage: $NAME [options] start|stop|restart|status"
             ;;
     esac
 else
