@@ -147,13 +147,13 @@ get_status()
 if [[ $DAEMON -eq 1 ]]; then
     case "$1" in
         start)
-            printf "Starting $DESCRIPTION server $NAME .. \r"
+            printf "Starting $DESCRIPTION server $NAME ... \r"
             sleep 1
             start_impl
             echo "Starting $DESCRIPTION server $NAME: $(get_status $?)"
             ;;
         stop)
-            printf "Stopping $DESCRIPTION server $NAME .. \r"
+            printf "Stopping $DESCRIPTION server $NAME ... \r"
             sleep 1
             stop_impl
             echo "Stopping $DESCRIPTION server $NAME: $(get_status $?)"
