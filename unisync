@@ -1,0 +1,145 @@
+#/bin/bash
+TTY=$(tty)
+UNISON=/usr/bin/unison
+INOTIFYWAIT=/usr/bin/inotifywait
+
+# conf
+PRF=unisync.prf
+SRC_DIR=/home/hobin/dev
+IGNORES="^25/*|^26/*|^run/*|^build.mk/*|.unison*"
+LOG_FILE=~/unison/unisync.log
+PID_FILE=~/unison/unisync.pid
+
+# usage
+USAGE="\
+Usage: $(basename $0) [options] ...\n\
+Options:\n\
+  -l, --logfile FILE        Set the log file.\n\
+  -d, --daemon              Run in daemon mode.\n\
+  -h, --help                Print this message and exit.\
+"
+
+# options
+OPTS=$(getopt -a -o l:dh -l logfile:,daemon,help -- "$@" 2>/dev/null)
+[[ $? -ne 0 ]] && echo -e "$USAGE" && exit 0
+eval set -- "${OPTS}"
+while true; do
+    case "$1" in
+    -l|--logfile)
+        LOG_FILE=$2
+        shift
+        ;;
+    -d|--daemon)
+        DAEMON=1
+        ;;
+    -h|--help)
+        echo -e "$USAGE"
+        exit 0
+        ;;
+    --)
+        shift
+        break
+        ;;
+    esac
+    shift
+done
+
+unisync_impl()
+{
+    # is running
+    if [[ $(ps -ef | grep -v grep | grep -c inotifywait) -gt 0 ]]; then
+        echo inotifywait is running >&2
+        return 1
+    fi
+    
+    # init
+    echo -e "Began: $(date)\nInotify: init"
+    $UNISON $PRF
+    echo -e "Ended: $(date)\n"
+
+    # inotifywait
+    $INOTIFYWAIT -mrq -e create,delete,modify,move $SRC_DIR | while read event; do
+        path=$(echo $event | awk '{print $1}')
+        path=${path/$SRC_DIR\//}
+        file=$(echo $event | awk '{print $3}')
+        
+        if [[ $(echo "$path$file"|grep -c -E "$IGNORES") -ge 0 ]]; then
+            log="Ignore file: $SRC_DIR/$path$file"
+            if [[ $DAEMON -ne 1 ]]; then
+                newline=1
+                size=($(stty size -F $TTY))
+                printf "%-${size[1]}s\r" "$log"
+            fi
+            continue
+        fi
+        if [[ $newline -eq 1 ]]; then
+            newline=0
+            printf "\n"
+        fi
+        
+        echo -e "Began: $(date)\nInotify: $event"
+        $UNISON $PRF -path "$path$file"
+        echo -e "Ended: $(date)\n"
+    done
+    return 0
+}
+
+start_impl()
+{
+    unisync_impl >> $LOG_FILE 2>&1 &
+    # pid
+    echo $! > $PID_FILE
+    return 0
+}
+
+stop_impl()
+{
+    if [[ ! -e "$PID_FILE" ]]; then
+        return 1
+    fi
+    pkill -P $(get_pid)
+    return $?
+}
+
+status_impl()
+{
+    PID=$(get_pid)
+    ps -p "$PID" >/dev/null 2>&1
+    return $?
+}
+
+get_pid()
+{
+    cat $PID_FILE 2>/dev/null
+}
+
+if [[ $DAEMON -eq 1 ]]; then
+    case "$1" in
+        start)
+            if status_impl -eq 0; then
+                echo "status: 0, pid: $(get_pid)"
+            else
+                start_impl
+                echo "start: $?, pid: $(get_pid), pidfile: $PID_FILE, logfile: $LOG_FILE"
+            fi
+            ;;
+        stop)
+            stop_impl
+            echo "stop: $?, pid: $(get_pid)"
+            ;;
+        restart)
+            stop_impl
+            start_impl
+            echo "restart: $?, pid: $(get_pid)"
+            ;;
+        status)
+            status_impl
+            echo "status: $?, pid: $(get_pid)"
+            ;;
+        ?)
+            echo "$(basename $0) -d start|stop|restart|status"
+            ;;
+    esac
+else
+    unisync_impl
+fi
