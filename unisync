@@ -10,7 +10,6 @@ IGNORES="^25/*|^26/*|^run/*|^build.mk/*|.unison*"
 LOG_FILE=~/unison/unisync.log
 PID_FILE=~/unison/unisync.pid
 
-
 NAME=$(basename $0)
 DESCRIPTION="Unison Inotify Synchronization"
 
