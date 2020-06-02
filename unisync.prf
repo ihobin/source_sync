@@ -1,0 +1,14 @@
+root=/home/hobin/dev
+root=ssh://hobin@dev:22//home/hobin/dev
+force=/home/hobin/dev
+prefer=ssh://hobin@dev:22//home/hobin/dev
+sshargs=-i /home/hobin/.ssh/id_rsa
+batch=true
+perms=0
+fastcheck=true
+confirmbigdel=false
+ignore=Regex 25/*
+ignore=Regex 26/*
+ignore=Regex run/*
+ignore=Regex build.mk/*
+ignore=Regex .unison*
