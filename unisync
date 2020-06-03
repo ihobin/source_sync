@@ -1,5 +1,5 @@
 #/bin/bash
-TTY=$(tty)
+TPUT=/usr/bin/tput
 UNISON=/usr/bin/unison
 INOTIFYWAIT=/usr/bin/inotifywait
 
@@ -18,13 +18,14 @@ USAGE="\
 Usage: $NAME [options] ...\n\
 Options:\n\
   -l, --logfile FILE        Set the log file.\n\
-  -d, --daemon              Run in daemon mode.\n\
+  -d, --daemon COMMAND      Run in daemon mode.\n\
+                            Available commands: start|stop|restart|status\n\
   -p, --pidfile FILE        Set the pid file.\n\
-  -h, --help                Print this message and exit.\
+  -h, --help                Print this message and exit.\n\
 "
 
 # options
-OPTS=$(getopt -a -o l:p:dh -l logfile:,logfile:,daemon,help -- "$@" 2>/dev/null)
+OPTS=$(getopt -a -o l:d:p:h -l logfile:,daemon:,pidfile:,help -- "$@" 2>/dev/null)
 [[ $? -ne 0 ]] && echo -e "$USAGE" && exit 0
 eval set -- "${OPTS}"
 while true; do
@@ -34,7 +35,12 @@ while true; do
         shift
         ;;
     -d|--daemon)
-        DAEMON=1
+        DAEMON=$2
+        shift
+        ;;
+    -p|--pidfile)
+        PID_FILE=$2
+        shift
         ;;
     -h|--help)
         echo -e "$USAGE"
@@ -48,46 +54,121 @@ while true; do
     shift
 done
 
-unisync_impl()
-{
-    # is running
-    if [[ $(ps -ef | grep -v grep | grep -c inotifywait) -gt 0 ]]; then
-        echo inotifywait is running >&2
+# log functions
+log_use_plymouth () {
+    if [ "${loop:-n}" = y ]; then
         return 1
     fi
-    
-    # init
-    echo -e "Began: $(date)\nInotify: init"
-    $UNISON $PRF
-    echo -e "Ended: $(date)\n"
-
-    # inotifywait
-    $INOTIFYWAIT -mrq -e create,delete,modify,move $SRC_DIR | while read event; do
-        path=$(echo $event | awk '{print $1}')
-        path=${path/$SRC_DIR\//}
-        file=$(echo $event | awk '{print $3}')
-        
-        if [[ $(echo "$path$file"|grep -c -E "$IGNORES") -ge 0 ]]; then
-            log="Ignore file: $SRC_DIR/$path$file"
-            if [[ $DAEMON -ne 1 ]]; then
-                newline=1
-                size=($(stty size -F $TTY))
-                printf "%-${size[1]}s\r" "$log"
-            fi
-            continue
-        fi
-        if [[ $newline -eq 1 ]]; then
-            newline=0
-            printf "\n"
-        fi
-        
-        echo -e "Began: $(date)\nInotify: $event"
-        $UNISON $PRF -path "$path$file"
-        echo -e "Ended: $(date)\n"
-    done
-    return 0
+    plymouth --ping >/dev/null 2>&1
 }
 
+log_use_fancy_output () {
+    TPUT=/usr/bin/tput
+    EXPR=/usr/bin/expr
+    if  [ -t 1 ] &&
+        [ "x${TERM:-}" != "x" ] &&
+        [ "x${TERM:-}" != "xdumb" ] &&
+        [ -x $TPUT ] && [ -x $EXPR ] &&
+        $TPUT hpa 60 >/dev/null 2>&1 &&
+        $TPUT setaf 1 >/dev/null 2>&1
+    then
+        [ -z $FANCYTTY ] && FANCYTTY=1 || true
+    else
+        FANCYTTY=0
+    fi
+    case "$FANCYTTY" in
+        1|Y|yes|true)   true;;
+        *)              false;;
+    esac
+}
+
+log_daemon_msg () {
+    if [ -z "$1" ]; then
+        return 1
+    fi
+
+    if log_use_fancy_output && $TPUT xenl >/dev/null 2>&1; then
+        COLS=`$TPUT cols`
+        if [ "$COLS" ] && [ "$COLS" -gt 6 ]; then
+            COL=`$EXPR $COLS - 7`
+        else
+            COLS=80
+            COL=73
+        fi
+
+        if log_use_plymouth; then
+            # If plymouth is running, don't output anything at this time
+            # to avoid buffering problems (LP: #752393)
+            if [ -z "$LOG_DAEMON_MSG" ]; then
+                LOG_DAEMON_MSG=$*
+                return
+            fi
+        fi
+
+        # We leave the cursor `hanging' about-to-wrap (see terminfo(5)
+        # xenl, which is approximately right). That way if the script
+        # prints anything then we will be on the next line and not
+        # overwrite part of the message.
+
+        # Previous versions of this code attempted to colour-code the
+        # asterisk but this can't be done reliably because in practice
+        # init scripts sometimes print messages even when they succeed
+        # and we won't be able to reliably know where the colourful
+        # asterisk ought to go.
+
+        printf " * $*       " || true
+        # Enough trailing spaces for ` [fail]' to fit in; if the message
+        # is too long it wraps here rather than later, which is what we
+        # want.
+        $TPUT hpa `$EXPR $COLS - 1` || true
+        printf ' ' || true
+    else
+        echo " * $@" || true
+        COL=
+    fi
+}
+
+log_begin_msg () {
+    log_daemon_msg "$1"
+}
+
+log_end_msg () {
+    if [ -z "$1" ]; then
+        return 1
+    fi
+
+    if [ "$COL" ] && [ -x "$TPUT" ]; then
+        # If plymouth is running, print previously stored output
+        # to avoid buffering problems (LP: #752393)
+        if log_use_plymouth; then
+            if [ -n "$LOG_DAEMON_MSG" ]; then
+                log_daemon_msg $LOG_DAEMON_MSG
+                LOG_DAEMON_MSG=""
+            fi
+        fi
+
+        printf "\r" || true
+        $TPUT hpa $COL
+        if [ "$1" -eq 0 ]; then
+            echo "[ OK ]" || true
+        else
+            printf '[' || true
+            $TPUT setaf 1 || true # red
+            printf fail || true
+            $TPUT op || true # normal
+            echo ']' || true
+        fi
+    else
+        if [ "$1" -eq 0 ]; then
+            echo "   ...done." || true
+        else
+            echo "   ...fail!" || true
+        fi
+    fi
+    return $1
+}
+
+# control functions
 start_impl()
 {
     # check running
@@ -127,10 +208,10 @@ get_status()
 {
     case "$1" in
         0)
-            echo -e "\033[1;32mOK\033[0m"
+            echo "OK"
             ;;
         1)
-            echo -e "\033[1;31mfailed\033[0m"
+            echo "fail"
             ;;
         2)
             echo "running"
@@ -144,33 +225,74 @@ get_status()
     esac
 }
 
-if [[ $DAEMON -eq 1 ]]; then
-    case "$1" in
-        start)
-            printf "Starting $DESCRIPTION server $NAME ... \r"
-            start_impl
-            echo "Starting $DESCRIPTION server $NAME: $(get_status $?)"
-            ;;
-        stop)
-            printf "Stopping $DESCRIPTION server $NAME ... \r"
-            stop_impl
-            echo "Stopping $DESCRIPTION server $NAME: $(get_status $?)"
-            ;;
-        restart)
-            printf "Restarting $DESCRIPTION server $NAME ...\r"
-            stop_impl
-            sleep 1
-            start_impl
-            echo "Restarting $DESCRIPTION server $NAME: $(get_status $?)"
-            ;;
-        status)
-            status_impl
-            echo "$NAME is $(get_status $?)"
-            ;;
-        *)
-            echo "Usage: $NAME [options] start|stop|restart|status"
-            ;;
-    esac
-else
-    unisync_impl
-fi
+# impl
+unisync_impl()
+{
+    # is running
+    if [[ $(ps -ef | grep -v grep | grep -c inotifywait) -gt 0 ]]; then
+        echo inotifywait is running >&2
+        return 1
+    fi
+    
+    # init
+    echo -e "Began: $(date)\nInotify: init"
+    $UNISON $PRF
+    echo -e "Ended: $(date)\n"
+
+    # inotifywait
+    $INOTIFYWAIT -mrq -e create,delete,modify,move $SRC_DIR | while read event; do
+        path=$(echo $event | awk '{print $1}')
+        path=${path/$SRC_DIR\//}
+        file=$(echo $event | awk '{print $3}')
+        
+        if [[ $(echo "$path$file"|grep -c -E "$IGNORES") -ge 0 ]]; then
+            log="Ignore file: $SRC_DIR/$path$file"
+            if [[ $DAEMON -ne 1 ]]; then
+                newline=1
+                printf "%-$($TPUT cols)s\r" "$log"
+            fi
+            continue
+        fi
+        if [[ $newline -eq 1 ]]; then
+            newline=0
+            printf "\n"
+        fi
+        
+        echo -e "Began: $(date)\nInotify: $event"
+        $UNISON $PRF -path "$path$file"
+        echo -e "Ended: $(date)\n"
+    done
+    return 0
+}
+
+# exec
+case "$DAEMON" in
+    start)
+        log_begin_msg "Starting $DESCRIPTION server $NAME" || true
+        start_impl
+        log_end_msg $? || true
+        ;;
+    stop)
+        log_begin_msg "Stopping $DESCRIPTION server $NAME" || true
+        stop_impl
+        log_end_msg $? || true
+        ;;
+    restart)
+        log_begin_msg "Restarting $DESCRIPTION server $NAME" || true
+        stop_impl
+        sleep 1
+        start_impl
+        log_end_msg $? || true
+        ;;
+    status)
+        status_impl
+        log_daemon_msg "$NAME is $(get_status $?)" || true
+        ;;
+    "")
+        # run in the foreground
+        unisync_impl
+        ;;
+    *)
+        echo -e "$USAGE"
+        ;;
+esac
