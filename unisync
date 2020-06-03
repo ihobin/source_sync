@@ -245,7 +245,7 @@ unisync_impl()
         path=${path/$SRC_DIR\//}
         file=$(echo $event | awk '{print $3}')
         
-        if [[ $(echo "$path$file"|grep -c -E "$IGNORES") -ge 0 ]]; then
+        if [[ $(echo "$path$file"|grep -c -E "$IGNORES") -gt 0 ]]; then
             log="Ignore file: $SRC_DIR/$path$file"
             if [[ -z $DAEMON ]]; then
                 newline=1
