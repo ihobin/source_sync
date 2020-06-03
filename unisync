@@ -17,15 +17,15 @@ DESCRIPTION="Unison Inotify Synchronization"
 USAGE="\
 Usage: $NAME [options] ...\n\
 Options:\n\
-  -l, --logfile FILE        Set the log file.\n\
   -d, --daemon COMMAND      Run in daemon mode.\n\
                             Available commands: start|stop|restart|status\n\
   -p, --pidfile FILE        Set the pid file.\n\
+  -l, --logfile FILE        Set the log file.\n\
   -h, --help                Print this message and exit.\
 "
 
 # options
-OPTS=$(getopt -a -o l:d:p:h -l logfile:,daemon:,pidfile:,help -- "$@" 2>/dev/null)
+OPTS=$(getopt -a -o d:p:l:h -l daemon:,pidfile:,logfile:,help -- "$@" 2>/dev/null)
 [[ $? -ne 0 ]] && echo -e "$USAGE" && exit 0
 eval set -- "${OPTS}"
 while true; do
