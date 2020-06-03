@@ -247,7 +247,7 @@ unisync_impl()
         
         if [[ $(echo "$path$file"|grep -c -E "$IGNORES") -ge 0 ]]; then
             log="Ignore file: $SRC_DIR/$path$file"
-            if [[ $DAEMON -ne 1 ]]; then
+            if [[ -z $DAEMON ]]; then
                 newline=1
                 printf "%-$($TPUT cols)s\r" "$log"
             fi
