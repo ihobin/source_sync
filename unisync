@@ -133,10 +133,10 @@ get_status()
             echo -e "\033[1;31mfailed\033[0m"
             ;;
         2)
-            echo -e "running"
+            echo "running"
             ;;
         3)
-            echo -e "not running"
+            echo "not running"
             ;;
         *)
             echo "<unknown>"
