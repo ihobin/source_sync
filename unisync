@@ -21,7 +21,7 @@ Options:\n\
   -d, --daemon COMMAND      Run in daemon mode.\n\
                             Available commands: start|stop|restart|status\n\
   -p, --pidfile FILE        Set the pid file.\n\
-  -h, --help                Print this message and exit.\n\
+  -h, --help                Print this message and exit.\
 "
 
 # options
